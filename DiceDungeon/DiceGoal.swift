@@ -131,13 +131,32 @@ struct DiceGoal {
             let colorValues = colors.compactMap { color in
                 diceResults.first(where: { $0.color == color })?.value
             }
-            guard colorValues.count == colors.count else { return false }
-            // Check if values form an ascending sequence (each value is 1 more than the previous)
+            
+            // Debug output
+            print("DEBUG colorSequence: Checking colors \(colors.map { $0.rawValue })")
+            for color in colors {
+                if let result = diceResults.first(where: { $0.color == color }) {
+                    print("  \(color.rawValue): \(result.value)")
+                } else {
+                    print("  \(color.rawValue): NOT FOUND")
+                }
+            }
+            print("  colorValues array: \(colorValues)")
+            
+            guard colorValues.count == colors.count else {
+                print("  FAILED: Not all colors found (\(colorValues.count) vs \(colors.count))")
+                return false
+            }
+            
+            // Check if values form a strictly ascending sequence (each value is 1 more than the previous)
             for i in 0..<(colorValues.count - 1) {
                 if colorValues[i + 1] != colorValues[i] + 1 {
+                    print("  FAILED: Values not consecutive - \(colorValues[i]) then \(colorValues[i+1])")
                     return false
                 }
             }
+            
+            print("  SUCCESS: Valid ascending sequence!")
             return true
             
         case .allWarmColors:

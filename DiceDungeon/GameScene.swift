@@ -691,11 +691,14 @@ class GameScene: SKScene {
         var results: [DiceResult] = []
         for i in 0..<6 {
             if let dice = slottedDice[i] {
-                results.append(DiceResult(color: dice.color, value: dice.getValue()))
+                let result = DiceResult(color: dice.color, value: dice.getValue())
+                results.append(result)
                 print("DEBUG: Slot \(i): \(dice.color.displayName) = \(dice.getValue())")
             }
         }
         
+        print("DEBUG: Total results passed to goals: \(results.count)")
+        print("DEBUG: Results summary: \(results.map { "\($0.color.displayName):\($0.value)" }.joined(separator: ", "))")
         print("DEBUG: Monster has \(monster.goals.count) goals")
         
         // Check which goals are met
