@@ -8,6 +8,7 @@
 import Cocoa
 import SpriteKit
 import GameplayKit
+import SwiftUI
 
 class ViewController: NSViewController {
 
@@ -17,14 +18,13 @@ class ViewController: NSViewController {
         super.viewDidLoad()
 
         if let view = self.skView {
-            // Load the SKScene from 'GameScene.sks'
-            if let scene = SKScene(fileNamed: "GameScene") {
-                // Set the scale mode to scale to fit the window
-                scene.scaleMode = .aspectFill
-                
-                // Present the scene
-                view.presentScene(scene)
-            }
+            // Create the scene programmatically
+            let scene = GameScene(size: view.bounds.size)
+            // Set the scale mode to resize with the window
+            scene.scaleMode = .resizeFill
+            
+            // Present the scene
+            view.presentScene(scene)
             
             view.ignoresSiblingOrder = true
             
@@ -34,3 +34,33 @@ class ViewController: NSViewController {
     }
 }
 
+extension ViewController {
+    /// Creates a controller suitable for SwiftUI previews by wiring an SKView programmatically.
+    static func makePreviewController() -> ViewController {
+        let vc = ViewController(nibName: nil, bundle: nil)
+        // Ensure view is loaded
+        _ = vc.view
+        if vc.skView == nil {
+            let sk = SKView(frame: .zero)
+            sk.translatesAutoresizingMaskIntoConstraints = false
+            vc.view.addSubview(sk)
+            NSLayoutConstraint.activate([
+                sk.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor),
+                sk.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor),
+                sk.topAnchor.constraint(equalTo: vc.view.topAnchor),
+                sk.bottomAnchor.constraint(equalTo: vc.view.bottomAnchor)
+            ])
+            vc.skView = sk
+        }
+        // Mirror viewDidLoad behavior for previews
+        if let view = vc.skView {
+            let scene = GameScene(size: view.bounds.size)
+            scene.scaleMode = .resizeFill
+            view.presentScene(scene)
+            view.ignoresSiblingOrder = true
+            view.showsFPS = true
+            view.showsNodeCount = true
+        }
+        return vc
+    }
+}

@@ -4,4 +4,13 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:HighScore.swift">
+   </FileRef>
+   <FileRef
+      location = "group:LEADERBOARD_FEATURE.md">
+   </FileRef>
+   <FileRef
+      location = "group:DiceDungeonHighScore.swift">
+   </FileRef>
 </Workspace>
