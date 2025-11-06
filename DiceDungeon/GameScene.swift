@@ -166,6 +166,8 @@ class GameScene: SKScene {
     private var titleLabel: SKLabelNode!
     private var leaderboardTitleLabel: SKLabelNode!
     private var leaderboardLabels: [SKLabelNode] = []
+    private var playerImageNode: SKSpriteNode!
+    private var monsterImageNode: SKSpriteNode!
     private var isRolling = false
     private var highScores: [HighScore] = []
     
@@ -187,6 +189,8 @@ class GameScene: SKScene {
         static let playerXPYOffset: CGFloat = 90
         static let leaderboardYOffset: CGFloat = 207  // Start of leaderboard below player XP (moved down ~1 inch)
         static let leaderboardLineHeight: CGFloat = 20  // Space between leaderboard entries
+        static let characterImageSize: CGFloat = 256  // Size for player and monster images
+        static let characterImageFromBottom: CGFloat = 256  // Position from bottom (lower third of screen)
         static let monsterStatsYOffset: CGFloat = 60
         static let monsterHPYOffset: CGFloat = 90
         static let goalsYOffset: CGFloat = 230  // Goals list - increased spacing to prevent overlap
@@ -313,6 +317,26 @@ class GameScene: SKScene {
         highScores = HighScoreManager.shared.loadScores()
         print("DEBUG setupUI: Loaded \(highScores.count) scores, updating leaderboard...")
         updateLeaderboard()
+        
+        // Player image (left side, lower third of screen)
+        let playerImageTexture = SKTexture(imageNamed: "player")
+        playerImageNode = SKSpriteNode(texture: playerImageTexture)
+        playerImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
+        playerImageNode.position = CGPoint(x: Layout.padding + Layout.characterImageSize / 2, 
+                                          y: Layout.characterImageFromBottom)
+        addChild(playerImageNode)
+        
+        // Monster image (right side, lower third of screen)
+        // Initial placeholder - will be updated when updateUI is called
+        if let encounter = currentEncounter, let monster = encounter.currentMonster {
+            let monsterImageName = monster.type.rawValue
+            let monsterImageTexture = SKTexture(imageNamed: monsterImageName)
+            monsterImageNode = SKSpriteNode(texture: monsterImageTexture)
+            monsterImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
+            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - Layout.characterImageSize / 2, 
+                                               y: Layout.characterImageFromBottom)
+            addChild(monsterImageNode)
+        }
         
         // Monster info (right side)
         monsterInfoLabel = SKLabelNode(fontNamed: "Arial Bold")
@@ -499,6 +523,9 @@ class GameScene: SKScene {
         playerHPLabel.text = "❤️ HP: \(player.currentHP)/\(player.maxHP)"
         playerXPLabel.text = "⭐️ XP: \(player.experience) | Level: \(player.level)"
         
+        // Update monster image
+        updateMonsterImage()
+        
         // Update room number
         roomNumberLabel.text = "Room \(roomNumber)"
         
@@ -570,6 +597,30 @@ class GameScene: SKScene {
             resultLabel.text = "Click dice to place them in slots, then press 'CHECK' (or RETURN) or 'ROLL AGAIN'"
         } else {
             resultLabel.text = "Place more dice in slots or press 'CHECK' (RETURN). Reroll unslotted dice anytime!"
+        }
+    }
+    
+    private func updateMonsterImage() {
+        guard let encounter = currentEncounter, let monster = encounter.currentMonster else {
+            // No monster to display, hide the image
+            monsterImageNode?.isHidden = true
+            return
+        }
+        
+        let monsterImageName = monster.type.rawValue
+        let monsterImageTexture = SKTexture(imageNamed: monsterImageName)
+        
+        if monsterImageNode == nil {
+            // Create the node if it doesn't exist
+            monsterImageNode = SKSpriteNode(texture: monsterImageTexture)
+            monsterImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
+            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - Layout.characterImageSize / 2, 
+                                               y: Layout.characterImageFromBottom)
+            addChild(monsterImageNode)
+        } else {
+            // Update existing node
+            monsterImageNode.texture = monsterImageTexture
+            monsterImageNode.isHidden = false
         }
     }
     
