@@ -13,12 +13,28 @@ class Player {
     var experience: Int = 0
     var level: Int = 1
     
+    // New Resource: Mana
+    var maxMana: Int = 3
+    var currentMana: Int = 3
+    
     func takeDamage(_ damage: Int) {
         currentHP = max(0, currentHP - damage)
     }
     
     func heal(_ amount: Int) {
         currentHP = min(maxHP, currentHP + amount)
+    }
+    
+    func useMana(_ amount: Int) -> Bool {
+        if currentMana >= amount {
+            currentMana -= amount
+            return true
+        }
+        return false
+    }
+    
+    func restoreMana() {
+        currentMana = maxMana
     }
     
     func gainExperience(_ xp: Int) {
@@ -32,10 +48,17 @@ class Player {
         while experience >= xpForNextLevel {
             level += 1
             maxHP += 10
+            
+            // Increase max mana every 3 levels
+            if level % 3 == 0 {
+                maxMana += 1
+            }
+            
             xpForNextLevel = level * 100
         }
-        // Full heal after all level ups
+        // Full heal and mana restore after all level ups
         currentHP = maxHP
+        currentMana = maxMana
     }
     
     var isAlive: Bool {
