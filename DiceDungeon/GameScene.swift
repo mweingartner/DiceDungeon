@@ -7,6 +7,35 @@
 
 import SpriteKit
 import GameplayKit
+import AppKit
+
+private enum UITheme {
+    static let backgroundTop = SKColor(red: 0.08, green: 0.09, blue: 0.13, alpha: 1.0)
+    static let backgroundBottom = SKColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 1.0)
+    static let ambientGlowLeft = SKColor(red: 0.35, green: 0.18, blue: 0.45, alpha: 0.4)
+    static let ambientGlowRight = SKColor(red: 0.12, green: 0.32, blue: 0.55, alpha: 0.35)
+    static let panelFill = SKColor(red: 0.12, green: 0.13, blue: 0.18, alpha: 0.88)
+    static let panelStroke = SKColor(red: 0.35, green: 0.38, blue: 0.5, alpha: 0.9)
+    static let panelShadow = SKColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.35)
+    static let textPrimary = SKColor(white: 0.95, alpha: 1.0)
+    static let textSecondary = SKColor(white: 0.78, alpha: 1.0)
+    static let accentGold = SKColor(red: 0.98, green: 0.8, blue: 0.3, alpha: 1.0)
+    static let accentRed = SKColor(red: 0.95, green: 0.35, blue: 0.35, alpha: 1.0)
+    static let accentBlue = SKColor(red: 0.35, green: 0.6, blue: 0.95, alpha: 1.0)
+    static let accentGreen = SKColor(red: 0.35, green: 0.8, blue: 0.45, alpha: 1.0)
+    static let buttonShadow = SKColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 0.6)
+    static let buttonStroke = SKColor(white: 0.92, alpha: 0.9)
+    static let slotFill = SKColor(red: 0.18, green: 0.2, blue: 0.27, alpha: 0.6)
+    static let slotStroke = SKColor(red: 0.4, green: 0.45, blue: 0.55, alpha: 0.9)
+}
+
+private enum UIFonts {
+    static let title = "AvenirNextCondensed-DemiBold"
+    static let header = "AvenirNext-DemiBold"
+    static let body = "AvenirNext-Regular"
+    static let button = "AvenirNext-Bold"
+    static let mono = "Menlo-Bold"
+}
 
 class DiceNode: SKNode {
     private let diceSize: CGFloat = 80
@@ -31,8 +60,8 @@ class DiceNode: SKNode {
         // Create dice background with color
         background = SKShapeNode(rectOf: CGSize(width: diceSize, height: diceSize), cornerRadius: 10)
         background.fillColor = color.skColor
-        background.strokeColor = .white
-        background.lineWidth = 3
+        background.strokeColor = UITheme.buttonStroke
+        background.lineWidth = 2
         addChild(background)
         
         // Start with value 1
@@ -94,8 +123,8 @@ class DiceNode: SKNode {
     private func createPip(at position: CGPoint) {
         let pip = SKShapeNode(circleOfRadius: pipRadius)
         pip.position = position
-        pip.fillColor = .white
-        pip.strokeColor = .white
+        pip.fillColor = UITheme.textPrimary
+        pip.strokeColor = UITheme.textPrimary
         pip.name = "pip"
         addChild(pip)
     }
@@ -198,6 +227,14 @@ class GameScene: SKScene {
     private var monsterImageNode: SKSpriteNode!
     private var isRolling = false
     private var highScores: [HighScore] = []
+    private var backgroundNode: SKSpriteNode?
+    private var ambientGlows: [SKShapeNode] = []
+    private var leftHudPanel: SKShapeNode?
+    private var rightHudPanel: SKShapeNode?
+    private var controlsPanel: SKShapeNode?
+    private var resultPanel: SKShapeNode?
+    private var maxGoalsInSingleCheck: Int = 1
+    private var damageTakenThisEncounter: Int = 0
     
     // Colors for dice (rainbow order)
     private let diceColors: [DiceColor] = [.red, .orange, .yellow, .green, .blue, .purple]
@@ -234,8 +271,32 @@ class GameScene: SKScene {
         static let buttonHeight: CGFloat = 60
     }
     
+    private struct LayoutState {
+        var buttonY: CGFloat = 0
+        var skillButtonY: CGFloat = 0
+        var resultLabelY: CGFloat = 0
+        var controlsPanelSize: CGSize = .zero
+        var controlsPanelCenter: CGPoint = .zero
+        var slotSize: CGFloat = 0
+        var slotSpacing: CGFloat = 0
+        var slotY: CGFloat = 0
+        var diceSpacing: CGFloat = 0
+        var diceScale: CGFloat = 1
+        var diceTopRowY: CGFloat = 0
+        var diceBottomRowY: CGFloat = 0
+        var characterImageSize: CGFloat = 0
+        var characterImageY: CGFloat = 0
+        var leftPanelSize: CGSize = .zero
+        var leftPanelCenter: CGPoint = .zero
+        var rightPanelSize: CGSize = .zero
+        var rightPanelCenter: CGPoint = .zero
+        var leaderboardLineHeight: CGFloat = 0
+    }
+    
+    private var layoutState = LayoutState()
+    
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.15, green: 0.15, blue: 0.2, alpha: 1.0)
+        backgroundColor = UITheme.backgroundBottom
         
         // Initialize game
         player = Player()
@@ -243,7 +304,10 @@ class GameScene: SKScene {
         rollCount = 0
         hasRolled = false
         gameEnded = false
+        maxGoalsInSingleCheck = 1
+        damageTakenThisEncounter = 0
         
+        setupBackground()
         setupUI()
         setupDice()
         setupSlots()
@@ -264,12 +328,58 @@ class GameScene: SKScene {
             currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
             rollCount = 0
             hasRolled = false
+            maxGoalsInSingleCheck = 1
+            damageTakenThisEncounter = 0
         }
         
+        setupBackground()
         setupUI()
         setupDice()
         setupSlots()
         updateUI()
+    }
+    
+    private func setupBackground() {
+        backgroundNode?.removeFromParent()
+        ambientGlows.forEach { $0.removeFromParent() }
+        ambientGlows.removeAll()
+        
+        if let texture = makeGradientTexture(size: size) {
+            let node = SKSpriteNode(texture: texture)
+            node.size = size
+            node.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            node.zPosition = -100
+            addChild(node)
+            backgroundNode = node
+        }
+        
+        let leftGlow = SKShapeNode(circleOfRadius: max(size.width, size.height) * 0.35)
+        leftGlow.fillColor = UITheme.ambientGlowLeft
+        leftGlow.strokeColor = .clear
+        leftGlow.position = CGPoint(x: size.width * 0.2, y: size.height * 0.35)
+        leftGlow.alpha = 0.6
+        leftGlow.zPosition = -90
+        addChild(leftGlow)
+        ambientGlows.append(leftGlow)
+        
+        let rightGlow = SKShapeNode(circleOfRadius: max(size.width, size.height) * 0.3)
+        rightGlow.fillColor = UITheme.ambientGlowRight
+        rightGlow.strokeColor = .clear
+        rightGlow.position = CGPoint(x: size.width * 0.85, y: size.height * 0.4)
+        rightGlow.alpha = 0.5
+        rightGlow.zPosition = -90
+        addChild(rightGlow)
+        ambientGlows.append(rightGlow)
+    }
+    
+    private func makeGradientTexture(size: CGSize) -> SKTexture? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let image = NSImage(size: size)
+        image.lockFocus()
+        let gradient = NSGradient(colors: [UITheme.backgroundTop, UITheme.backgroundBottom])
+        gradient?.draw(in: NSRect(origin: .zero, size: size), angle: -90)
+        image.unlockFocus()
+        return SKTexture(image: image)
     }
     
     private func setupUI() {
@@ -283,69 +393,170 @@ class GameScene: SKScene {
         let normalFontSize = min(20, sceneWidth / 40)
         let smallFontSize = min(18, sceneWidth / 45)
         
+        let controlsBottom = Layout.padding
+        let buttonY = controlsBottom + Layout.buttonHeight / 2 + 8
+        let skillButtonY = buttonY + Layout.buttonHeight / 2 + 14 + 22
+        let resultY = skillButtonY + 22 + 24
+        let controlsPanelHeight = max(180, resultY + 26 - controlsBottom)
+        let controlsPanelWidth = size.width - Layout.padding * 2
+        let controlsPanelCenter = CGPoint(x: size.width / 2, y: controlsBottom + controlsPanelHeight / 2)
+        
+        let leaderboardLineHeight = min(Layout.leaderboardLineHeight, smallFontSize + 2)
+        let requiredLeftPanelHeight = max(200, 26 + 92 + 24 + leaderboardLineHeight * 10 + 16)
+        
+        var topHudHeight = min(260, max(180, size.height * 0.33))
+        let minMiddleHeight: CGFloat = 200
+        let maxTopHudHeight = max(140, size.height - controlsPanelHeight - minMiddleHeight - Layout.padding * 2)
+        let requiredHudHeight = requiredLeftPanelHeight + 6
+        topHudHeight = min(max(topHudHeight, requiredHudHeight), maxTopHudHeight)
+        
+        let middleBottom = controlsBottom + controlsPanelHeight + Layout.padding
+        let middleTop = size.height - topHudHeight - Layout.padding
+        let middleHeight = max(0, middleTop - middleBottom)
+        
+        let slotSize = min(90, sceneWidth / 10, max(60, middleHeight * 0.3))
+        let slotSpacing = min(100, sceneWidth / 9)
+        let slotY = middleBottom + slotSize / 2
+        
+        let diceSpacing = min(110, sceneWidth / 8)
+        let diceGap: CGFloat = 24
+        let availableForDice = max(0, middleTop - (slotY + slotSize / 2 + diceGap))
+        let baseClusterHeight = 80 + 2 * 0.55 * diceSpacing
+        let diceScale = max(0.45, min(1.0, availableForDice / baseClusterHeight))
+        let rowOffset = 0.55 * diceSpacing * diceScale
+        let clusterHeight = baseClusterHeight * diceScale
+        let diceCenterY = slotY + slotSize / 2 + diceGap + clusterHeight / 2
+        let diceTopRowY = diceCenterY + rowOffset
+        let diceBottomRowY = diceCenterY - rowOffset
+        
+        let characterImageSize = min(Layout.characterImageSize, size.width * 0.2, max(90, middleHeight * 0.55))
+        let characterImageY = middleBottom + middleHeight * 0.45
+        
+        let leftPanelWidth = min(300, size.width * 0.26)
+        let leftPanelHeight = min(maxTopHudHeight, max(requiredLeftPanelHeight, topHudHeight - 6))
+        let leftPanelCenter = CGPoint(x: Layout.padding + leftPanelWidth / 2,
+                                      y: size.height - Layout.padding - leftPanelHeight / 2)
+        let leftPanel = createPanel(size: CGSize(width: leftPanelWidth, height: leftPanelHeight),
+                                    position: leftPanelCenter,
+                                    cornerRadius: 18)
+        leftPanel.alpha = 0.55
+        leftHudPanel = leftPanel
+        addChild(leftPanel)
+        
+        let rightPanelWidth = min(300, size.width * 0.26)
+        let rightPanelHeight = min(maxTopHudHeight, max(leftPanelHeight, topHudHeight - 6))
+        let rightPanelCenter = CGPoint(x: size.width - Layout.padding - rightPanelWidth / 2,
+                                       y: size.height - Layout.padding - rightPanelHeight / 2)
+        let rightPanel = createPanel(size: CGSize(width: rightPanelWidth, height: rightPanelHeight),
+                                     position: rightPanelCenter,
+                                     cornerRadius: 18)
+        rightPanel.alpha = 0.55
+        rightHudPanel = rightPanel
+        addChild(rightPanel)
+        
+        let newControlsPanel = createPanel(size: CGSize(width: controlsPanelWidth, height: controlsPanelHeight),
+                                           position: controlsPanelCenter,
+                                           cornerRadius: 16)
+        newControlsPanel.alpha = 0.6
+        newControlsPanel.zPosition = -6
+        newControlsPanel.name = "controlsPanel"
+        controlsPanel?.removeFromParent()
+        controlsPanel = newControlsPanel
+        addChild(newControlsPanel)
+        
+        layoutState = LayoutState(
+            buttonY: buttonY,
+            skillButtonY: skillButtonY,
+            resultLabelY: resultY,
+            controlsPanelSize: CGSize(width: controlsPanelWidth, height: controlsPanelHeight),
+            controlsPanelCenter: controlsPanelCenter,
+            slotSize: slotSize,
+            slotSpacing: slotSpacing,
+            slotY: slotY,
+            diceSpacing: diceSpacing,
+            diceScale: diceScale,
+            diceTopRowY: diceTopRowY,
+            diceBottomRowY: diceBottomRowY,
+            characterImageSize: characterImageSize,
+            characterImageY: characterImageY,
+            leftPanelSize: CGSize(width: leftPanelWidth, height: leftPanelHeight),
+            leftPanelCenter: leftPanelCenter,
+            rightPanelSize: CGSize(width: rightPanelWidth, height: rightPanelHeight),
+            rightPanelCenter: rightPanelCenter,
+            leaderboardLineHeight: leaderboardLineHeight
+        )
+        
         // Title
-        titleLabel = SKLabelNode(fontNamed: "Arial Bold")
+        titleLabel = SKLabelNode(fontNamed: UIFonts.title)
         titleLabel.text = "⚔️ Dice Dungeon ⚔️"
         titleLabel.fontSize = titleFontSize
-        titleLabel.fontColor = .white
+        titleLabel.fontColor = UITheme.textPrimary
         titleLabel.position = CGPoint(x: size.width / 2, y: size.height - Layout.titleYOffset)
         addChild(titleLabel)
         
         // Room number
-        roomNumberLabel = SKLabelNode(fontNamed: "Arial Bold")
+        roomNumberLabel = SKLabelNode(fontNamed: UIFonts.header)
         roomNumberLabel.fontSize = mediumFontSize
-        roomNumberLabel.fontColor = SKColor(red: 1.0, green: 0.8, blue: 0.3, alpha: 1.0)
+        roomNumberLabel.fontColor = UITheme.accentGold
         roomNumberLabel.position = CGPoint(x: size.width / 2, y: size.height - Layout.roomYOffset)
         addChild(roomNumberLabel)
         
         // Roll count (below room number)
-        rollCountLabel = SKLabelNode(fontNamed: "Arial")
+        rollCountLabel = SKLabelNode(fontNamed: UIFonts.body)
         rollCountLabel.fontSize = normalFontSize
-        rollCountLabel.fontColor = SKColor(red: 1.0, green: 0.6, blue: 0.6, alpha: 1.0)
+        rollCountLabel.fontColor = UITheme.textSecondary
         rollCountLabel.position = CGPoint(x: size.width / 2, y: size.height - Layout.rollCountYOffset)
         addChild(rollCountLabel)
         
+        let leftPanelTop = layoutState.leftPanelCenter.y + layoutState.leftPanelSize.height / 2
+        let leftPanelInsetX = layoutState.leftPanelCenter.x - layoutState.leftPanelSize.width / 2 + 18
+        let statsStartY = leftPanelTop - 26
+        
         // Player HP (left side)
-        playerHPLabel = SKLabelNode(fontNamed: "Arial Bold")
+        playerHPLabel = SKLabelNode(fontNamed: UIFonts.header)
         playerHPLabel.fontSize = largeFontSize
-        playerHPLabel.fontColor = SKColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0)
-        playerHPLabel.position = CGPoint(x: Layout.padding + 100, y: size.height - Layout.playerStatsYOffset)
+        playerHPLabel.fontColor = UITheme.accentRed
+        playerHPLabel.position = CGPoint(x: leftPanelInsetX, y: statsStartY)
         playerHPLabel.horizontalAlignmentMode = .left
         addChild(playerHPLabel)
         
         // Player Mana (left side)
-        playerManaLabel = SKLabelNode(fontNamed: "Arial Bold")
+        playerManaLabel = SKLabelNode(fontNamed: UIFonts.header)
         playerManaLabel.fontSize = mediumFontSize
-        playerManaLabel.fontColor = SKColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 1.0)
-        playerManaLabel.position = CGPoint(x: Layout.padding + 100, y: size.height - Layout.playerManaYOffset)
+        playerManaLabel.fontColor = UITheme.accentBlue
+        playerManaLabel.position = CGPoint(x: leftPanelInsetX, y: statsStartY - 28)
         playerManaLabel.horizontalAlignmentMode = .left
         addChild(playerManaLabel)
         
         // Player XP (left side)
-        playerXPLabel = SKLabelNode(fontNamed: "Arial")
+        playerXPLabel = SKLabelNode(fontNamed: UIFonts.body)
         playerXPLabel.fontSize = normalFontSize
-        playerXPLabel.fontColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 1.0)
-        playerXPLabel.position = CGPoint(x: Layout.padding + 100, y: size.height - Layout.playerXPYOffset)
+        playerXPLabel.fontColor = UITheme.textSecondary
+        playerXPLabel.position = CGPoint(x: leftPanelInsetX, y: statsStartY - 56)
         playerXPLabel.horizontalAlignmentMode = .left
         addChild(playerXPLabel)
         
         // Leaderboard (left side, below player XP)
-        leaderboardTitleLabel = SKLabelNode(fontNamed: "Arial Bold")
+        leaderboardTitleLabel = SKLabelNode(fontNamed: UIFonts.header)
         leaderboardTitleLabel.text = "🏆 TOP SCORES 🏆"
         leaderboardTitleLabel.fontSize = normalFontSize
-        leaderboardTitleLabel.fontColor = SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
-        leaderboardTitleLabel.position = CGPoint(x: Layout.padding + 100, y: size.height - Layout.leaderboardYOffset)
+        leaderboardTitleLabel.fontColor = UITheme.accentGold
+        let leaderboardTitleY = statsStartY - 92
+        leaderboardTitleLabel.position = CGPoint(x: leftPanelInsetX, y: leaderboardTitleY)
         leaderboardTitleLabel.horizontalAlignmentMode = .left
         addChild(leaderboardTitleLabel)
         
         // Create 10 leaderboard entry labels
+        let leaderboardStartY = leaderboardTitleY - 24
+        let lineHeight = layoutState.leaderboardLineHeight
+        
         leaderboardLabels.removeAll()
         for i in 0..<10 {
-            let label = SKLabelNode(fontNamed: "Courier")
+            let label = SKLabelNode(fontNamed: UIFonts.mono)
             label.fontSize = smallFontSize - 2
-            label.fontColor = SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
-            label.position = CGPoint(x: Layout.padding + 100, 
-                                    y: size.height - Layout.leaderboardYOffset - 25 - CGFloat(i) * Layout.leaderboardLineHeight)
+            label.fontColor = UITheme.accentGold
+            label.position = CGPoint(x: leftPanelInsetX,
+                                     y: leaderboardStartY - CGFloat(i) * lineHeight)
             label.horizontalAlignmentMode = .left
             label.text = String(format: "%2d. --- ----", i + 1)
             addChild(label)
@@ -358,9 +569,9 @@ class GameScene: SKScene {
         // Player image
         let playerImageTexture = SKTexture(imageNamed: "player")
         playerImageNode = SKSpriteNode(texture: playerImageTexture)
-        playerImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
-        playerImageNode.position = CGPoint(x: Layout.padding + Layout.characterImageSize / 2, 
-                                          y: Layout.characterImageFromBottom)
+        playerImageNode.size = CGSize(width: layoutState.characterImageSize, height: layoutState.characterImageSize)
+        playerImageNode.position = CGPoint(x: Layout.padding + layoutState.characterImageSize / 2,
+                                           y: layoutState.characterImageY)
         addChild(playerImageNode)
         
         // Monster image placeholder
@@ -368,95 +579,122 @@ class GameScene: SKScene {
             let monsterImageName = monster.type.rawValue
             let monsterImageTexture = SKTexture(imageNamed: monsterImageName)
             monsterImageNode = SKSpriteNode(texture: monsterImageTexture)
-            monsterImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
-            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - Layout.characterImageSize / 2, 
-                                               y: Layout.characterImageFromBottom)
+            monsterImageNode.size = CGSize(width: layoutState.characterImageSize, height: layoutState.characterImageSize)
+            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - layoutState.characterImageSize / 2,
+                                                y: layoutState.characterImageY)
             addChild(monsterImageNode)
         }
         
+        let rightPanelTop = layoutState.rightPanelCenter.y + layoutState.rightPanelSize.height / 2
+        let rightPanelInsetX = layoutState.rightPanelCenter.x + layoutState.rightPanelSize.width / 2 - 18
+        let rightPanelLeftInsetX = layoutState.rightPanelCenter.x - layoutState.rightPanelSize.width / 2 + 18
+        
         // Monster info (right side)
-        monsterInfoLabel = SKLabelNode(fontNamed: "Arial Bold")
+        monsterInfoLabel = SKLabelNode(fontNamed: UIFonts.header)
         monsterInfoLabel.fontSize = largeFontSize
-        monsterInfoLabel.fontColor = SKColor(red: 1.0, green: 0.5, blue: 0.2, alpha: 1.0)
-        monsterInfoLabel.position = CGPoint(x: size.width - Layout.padding - 100, y: size.height - Layout.monsterStatsYOffset)
+        monsterInfoLabel.fontColor = UITheme.accentGold
+        monsterInfoLabel.position = CGPoint(x: rightPanelInsetX, y: rightPanelTop - 26)
         monsterInfoLabel.horizontalAlignmentMode = .right
         addChild(monsterInfoLabel)
         
         // Monster HP (right side)
-        monsterHPLabel = SKLabelNode(fontNamed: "Arial")
+        monsterHPLabel = SKLabelNode(fontNamed: UIFonts.body)
         monsterHPLabel.fontSize = normalFontSize
-        monsterHPLabel.fontColor = SKColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
-        monsterHPLabel.position = CGPoint(x: size.width - Layout.padding - 100, y: size.height - Layout.monsterHPYOffset)
+        monsterHPLabel.fontColor = UITheme.textSecondary
+        monsterHPLabel.position = CGPoint(x: rightPanelInsetX, y: rightPanelTop - 46)
         monsterHPLabel.horizontalAlignmentMode = .right
         addChild(monsterHPLabel)
         
         // Goals label
-        goalsLabel = SKLabelNode(fontNamed: "Arial")
+        goalsLabel = SKLabelNode(fontNamed: UIFonts.body)
         goalsLabel.fontSize = smallFontSize
-        goalsLabel.fontColor = SKColor(red: 1.0, green: 1.0, blue: 0.6, alpha: 1.0)
-        goalsLabel.position = CGPoint(x: size.width - Layout.padding - 100, y: size.height - Layout.goalsYOffset)
+        goalsLabel.fontColor = UITheme.textSecondary
+        goalsLabel.position = CGPoint(x: rightPanelLeftInsetX, y: monsterInfoLabel.position.y - 28.35)
         goalsLabel.numberOfLines = 0
-        goalsLabel.preferredMaxLayoutWidth = 400
-        goalsLabel.horizontalAlignmentMode = .right
+        goalsLabel.preferredMaxLayoutWidth = max(200, layoutState.rightPanelSize.width - 30)
+        goalsLabel.horizontalAlignmentMode = .left
+        goalsLabel.verticalAlignmentMode = .top
         addChild(goalsLabel)
         
         // Main Buttons
-        let buttonSpacingFor3 = Layout.buttonWidth + 40
-        let totalWidth = buttonSpacingFor3 * 2
+        let buttonSpacingFor4 = Layout.buttonWidth + 24
+        let totalWidth = buttonSpacingFor4 * 3
         let startX = (size.width - totalWidth) / 2
         
         // Roll button
         rollButton = SKShapeNode(rectOf: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
-        rollButton.position = CGPoint(x: startX, y: Layout.buttonYOffset)
-        rollButton.fillColor = SKColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
-        rollButton.strokeColor = .white
-        rollButton.lineWidth = 3
+        rollButton.position = CGPoint(x: startX, y: layoutState.buttonY)
+        rollButton.fillColor = UITheme.accentBlue
+        rollButton.strokeColor = UITheme.buttonStroke
+        rollButton.lineWidth = 2.5
         rollButton.name = "rollButton"
         addChild(rollButton)
+        attachShadow(to: rollButton, size: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
         
-        rollButtonLabel = SKLabelNode(fontNamed: "Arial Bold")
+        rollButtonLabel = SKLabelNode(fontNamed: UIFonts.button)
         rollButtonLabel.text = "ROLL DICE"
         rollButtonLabel.fontSize = min(22, normalFontSize + 2)
-        rollButtonLabel.fontColor = .white
+        rollButtonLabel.fontColor = UITheme.textPrimary
         rollButtonLabel.verticalAlignmentMode = .center
         rollButton.addChild(rollButtonLabel)
         
         // Check button
         checkButton = SKShapeNode(rectOf: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
-        checkButton.position = CGPoint(x: startX + buttonSpacingFor3, y: Layout.buttonYOffset)
-        checkButton.fillColor = SKColor(red: 0.2, green: 0.8, blue: 0.3, alpha: 1.0)
-        checkButton.strokeColor = .white
-        checkButton.lineWidth = 3
+        checkButton.position = CGPoint(x: startX + buttonSpacingFor4, y: layoutState.buttonY)
+        checkButton.fillColor = UITheme.accentGreen
+        checkButton.strokeColor = UITheme.buttonStroke
+        checkButton.lineWidth = 2.5
         checkButton.name = "checkButton"
         checkButton.alpha = 0.5
         addChild(checkButton)
+        attachShadow(to: checkButton, size: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
         
-        checkButtonLabel = SKLabelNode(fontNamed: "Arial Bold")
+        checkButtonLabel = SKLabelNode(fontNamed: UIFonts.button)
         checkButtonLabel.text = "CHECK"
         checkButtonLabel.fontSize = min(22, normalFontSize + 2)
-        checkButtonLabel.fontColor = .white
+        checkButtonLabel.fontColor = UITheme.textPrimary
         checkButtonLabel.verticalAlignmentMode = .center
         checkButton.addChild(checkButtonLabel)
         
         // Run button
         runButton = SKShapeNode(rectOf: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
-        runButton.position = CGPoint(x: startX + buttonSpacingFor3 * 2, y: Layout.buttonYOffset)
-        runButton.fillColor = SKColor(red: 0.9, green: 0.6, blue: 0.2, alpha: 1.0)
-        runButton.strokeColor = .white
-        runButton.lineWidth = 3
+        runButton.position = CGPoint(x: startX + buttonSpacingFor4 * 2, y: layoutState.buttonY)
+        runButton.fillColor = UITheme.accentGold
+        runButton.strokeColor = UITheme.buttonStroke
+        runButton.lineWidth = 2.5
         runButton.name = "runButton"
         addChild(runButton)
+        attachShadow(to: runButton, size: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
         
-        runButtonLabel = SKLabelNode(fontNamed: "Arial Bold")
+        runButtonLabel = SKLabelNode(fontNamed: UIFonts.button)
         runButtonLabel.text = "🏃 RUN"
         runButtonLabel.fontSize = min(22, normalFontSize + 2)
-        runButtonLabel.fontColor = .white
+        runButtonLabel.fontColor = UITheme.textPrimary
         runButtonLabel.verticalAlignmentMode = .center
         runButton.addChild(runButtonLabel)
         
+        // New Game button
+        newGameButton = SKShapeNode(rectOf: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight), cornerRadius: 10)
+        newGameButton.position = CGPoint(x: startX + buttonSpacingFor4 * 3, y: layoutState.buttonY)
+        newGameButton.fillColor = UITheme.accentRed
+        newGameButton.strokeColor = UITheme.buttonStroke
+        newGameButton.lineWidth = 2.5
+        newGameButton.name = "newGameButton"
+        addChild(newGameButton)
+        attachShadow(to: newGameButton,
+                     size: CGSize(width: Layout.buttonWidth, height: Layout.buttonHeight),
+                     cornerRadius: 10)
+        
+        newGameButtonLabel = SKLabelNode(fontNamed: UIFonts.button)
+        newGameButtonLabel.text = "NEW GAME"
+        newGameButtonLabel.fontSize = min(21, normalFontSize + 1)
+        newGameButtonLabel.fontColor = UITheme.textPrimary
+        newGameButtonLabel.verticalAlignmentMode = .center
+        newGameButton.addChild(newGameButtonLabel)
+        
         // --- SKILL BUTTONS ---
-        let skillY = Layout.skillButtonYOffset
-        let skillGap: CGFloat = 140
+        let skillY = layoutState.skillButtonY
+        let skillGap: CGFloat = 160
         
         // Nudge Button
         skillNudgeButton = createSkillButton(text: "Nudge", icon: "☝️", color: .cyan, position: CGPoint(x: size.width/2 - skillGap, y: skillY))
@@ -473,43 +711,28 @@ class GameScene: SKScene {
         skillFocusButton.name = "skillFocus"
         addChild(skillFocusButton)
         
-        // New Game button
-        newGameButton = SKShapeNode(rectOf: CGSize(width: Layout.buttonWidth * 0.75, height: Layout.buttonHeight * 0.65), cornerRadius: 8)
-        newGameButton.position = CGPoint(x: Layout.padding + (Layout.buttonWidth * 0.375), y: size.height - Layout.playerXPYOffset - 35)
-        newGameButton.fillColor = SKColor(red: 0.8, green: 0.3, blue: 0.3, alpha: 1.0)
-        newGameButton.strokeColor = .white
-        newGameButton.lineWidth = 2
-        newGameButton.name = "newGameButton"
-        addChild(newGameButton)
-        
-        newGameButtonLabel = SKLabelNode(fontNamed: "Arial Bold")
-        newGameButtonLabel.text = "🔄 NEW GAME"
-        newGameButtonLabel.fontSize = min(17, normalFontSize - 3)
-        newGameButtonLabel.fontColor = .white
-        newGameButtonLabel.verticalAlignmentMode = .center
-        newGameButton.addChild(newGameButtonLabel)
-        
         // Result label
-        resultLabel = SKLabelNode(fontNamed: "Arial")
+        resultLabel = SKLabelNode(fontNamed: UIFonts.body)
         resultLabel.fontSize = normalFontSize
-        resultLabel.fontColor = .white
-        resultLabel.position = CGPoint(x: size.width / 2, y: Layout.resultYOffset)
+        resultLabel.fontColor = UITheme.textPrimary
+        resultLabel.position = CGPoint(x: size.width / 2, y: layoutState.resultLabelY)
         resultLabel.numberOfLines = 0
-        resultLabel.preferredMaxLayoutWidth = size.width - Layout.padding * 10
+        resultLabel.preferredMaxLayoutWidth = max(200, layoutState.controlsPanelSize.width - Layout.padding * 2)
         addChild(resultLabel)
     }
     
     private func createSkillButton(text: String, icon: String, color: SKColor, position: CGPoint) -> SKShapeNode {
-        let btn = SKShapeNode(rectOf: CGSize(width: 120, height: 40), cornerRadius: 8)
+        let btn = SKShapeNode(rectOf: CGSize(width: 140, height: 44), cornerRadius: 10)
         btn.position = position
-        btn.fillColor = color.withAlphaComponent(0.3)
+        btn.fillColor = color.withAlphaComponent(0.35)
         btn.strokeColor = color
-        btn.lineWidth = 2
+        btn.lineWidth = 2.5
+        attachShadow(to: btn, size: CGSize(width: 140, height: 44), cornerRadius: 10, offset: CGPoint(x: 0, y: -2))
         
-        let label = SKLabelNode(fontNamed: "Arial Bold")
+        let label = SKLabelNode(fontNamed: UIFonts.button)
         label.text = "\(icon) \(text) (1 MP)"
-        label.fontSize = 14
-        label.fontColor = .white
+        label.fontSize = 15
+        label.fontColor = UITheme.textPrimary
         label.verticalAlignmentMode = .center
         label.name = "label"
         btn.addChild(label)
@@ -517,25 +740,54 @@ class GameScene: SKScene {
         return btn
     }
     
+    private func createPanel(size: CGSize, position: CGPoint, cornerRadius: CGFloat) -> SKShapeNode {
+        let panel = SKShapeNode(rectOf: size, cornerRadius: cornerRadius)
+        panel.position = position
+        panel.fillColor = UITheme.panelFill
+        panel.strokeColor = UITheme.panelStroke
+        panel.lineWidth = 2.5
+        panel.zPosition = -5
+        attachShadow(to: panel,
+                     size: size,
+                     cornerRadius: cornerRadius,
+                     offset: CGPoint(x: 0, y: -6),
+                     color: UITheme.panelShadow,
+                     alpha: 0.5)
+        return panel
+    }
+    
+    private func attachShadow(to node: SKShapeNode,
+                              size: CGSize,
+                              cornerRadius: CGFloat,
+                              offset: CGPoint = CGPoint(x: 0, y: -4),
+                              color: SKColor = UITheme.buttonShadow,
+                              alpha: CGFloat = 0.7) {
+        let shadow = SKShapeNode(rectOf: size, cornerRadius: cornerRadius)
+        shadow.fillColor = color
+        shadow.strokeColor = .clear
+        shadow.alpha = alpha
+        shadow.position = offset
+        shadow.zPosition = -1
+        node.addChild(shadow)
+    }
+    
     private func setupDice() {
         // Scale dice based on scene size
-        let sceneWidth = max(size.width, Layout.minWidth)
-        
-        let diceSpacing = min(110, sceneWidth / 8)
+        let diceSpacing = layoutState.diceSpacing
         let dicePerRow: CGFloat = 3
         
         let totalWidth = (dicePerRow - 1) * diceSpacing
         let startX = (size.width - totalWidth) / 2
         
-        // Shifted dice UP to make room for UI at bottom
-        let topRowY = size.height / 2 + 40 + diceSpacing * 0.55
-        let bottomRowY = size.height / 2 + 40 - diceSpacing * 0.55
+        let topRowY = layoutState.diceTopRowY
+        let bottomRowY = layoutState.diceBottomRowY
         
         // Top row
         for i in 0..<3 {
             let dice = DiceNode(color: diceColors[i])
             let position = CGPoint(x: startX + CGFloat(i) * diceSpacing, y: topRowY)
             dice.position = position
+            dice.setScale(layoutState.diceScale)
             dice.setValue(1)
             dice.name = "dice_\(i)"
             self.dice.append(dice)
@@ -548,6 +800,7 @@ class GameScene: SKScene {
             let dice = DiceNode(color: diceColors[i + 3])
             let position = CGPoint(x: startX + CGFloat(i) * diceSpacing, y: bottomRowY)
             dice.position = position
+            dice.setScale(layoutState.diceScale)
             dice.setValue(1)
             dice.name = "dice_\(i + 3)"
             self.dice.append(dice)
@@ -557,24 +810,20 @@ class GameScene: SKScene {
     }
     
     private func setupSlots() {
-        let sceneWidth = max(size.width, Layout.minWidth)
-        let slotSize: CGFloat = min(90, sceneWidth / 10)
-        let slotSpacing = min(100, sceneWidth / 9)
+        let slotSize: CGFloat = layoutState.slotSize
+        let slotSpacing = layoutState.slotSpacing
         let slotsPerRow: CGFloat = 6
         
         let totalWidth = (slotsPerRow - 1) * slotSpacing
         let startX = (size.width - totalWidth) / 2
         
-        // Position slots well below the dice area to avoid overlap
-        // Dice are at size.height / 2 + 40 ± ~55, so we drop slots much lower
-        // Place them about halfway between dice center and result label
-        let slotY = size.height / 2 - 120 // Dropped down significantly
+        let slotY = layoutState.slotY
         
         for i in 0..<6 {
             let slot = SKShapeNode(rectOf: CGSize(width: slotSize, height: slotSize), cornerRadius: 10)
             slot.position = CGPoint(x: startX + CGFloat(i) * slotSpacing, y: slotY)
-            slot.fillColor = SKColor(red: 0.3, green: 0.3, blue: 0.4, alpha: 0.5)
-            slot.strokeColor = SKColor(red: 0.6, green: 0.6, blue: 0.7, alpha: 1.0)
+            slot.fillColor = UITheme.slotFill
+            slot.strokeColor = UITheme.slotStroke
             slot.lineWidth = 2
             slot.name = "slot_\(i)"
             diceSlots.append(slot)
@@ -593,9 +842,9 @@ class GameScene: SKScene {
         roomNumberLabel.text = "Room \(roomNumber)"
         rollCountLabel.text = "Rolls: \(rollCount) | Damage taken: \((max(0, rollCount - 1)) * 10) HP"
         if rollCount <= 1 {
-            rollCountLabel.fontColor = SKColor(red: 0.5, green: 1.0, blue: 0.5, alpha: 1.0)
+            rollCountLabel.fontColor = UITheme.accentGreen
         } else {
-            rollCountLabel.fontColor = SKColor(red: 1.0, green: 0.6, blue: 0.6, alpha: 1.0)
+            rollCountLabel.fontColor = UITheme.accentRed
         }
         
         if let encounter = currentEncounter, let monster = encounter.currentMonster {
@@ -659,7 +908,7 @@ class GameScene: SKScene {
                 run(SKAction.sequence([wait, showDialog]))
             }
         } else if currentEncounter?.isComplete == true {
-            resultLabel.text = "🎉 Room cleared! Health & Mana restored!"
+            resultLabel.text = "🎉 Room cleared! HP restored!"
         } else if !hasRolled {
             resultLabel.text = "Click 'ROLL DICE' or press SPACE to roll all dice!"
         } else if slottedDice.isEmpty {
@@ -711,9 +960,9 @@ class GameScene: SKScene {
         
         if monsterImageNode == nil {
             monsterImageNode = SKSpriteNode(texture: monsterImageTexture)
-            monsterImageNode.size = CGSize(width: Layout.characterImageSize, height: Layout.characterImageSize)
-            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - Layout.characterImageSize / 2, 
-                                               y: Layout.characterImageFromBottom)
+            monsterImageNode.size = CGSize(width: layoutState.characterImageSize, height: layoutState.characterImageSize)
+            monsterImageNode.position = CGPoint(x: size.width - Layout.padding - layoutState.characterImageSize / 2,
+                                                y: layoutState.characterImageY)
             addChild(monsterImageNode)
         } else {
             monsterImageNode.texture = monsterImageTexture
@@ -736,6 +985,7 @@ class GameScene: SKScene {
             rollCount += 1
             let damage = 10
             player.takeDamage(damage)
+            damageTakenThisEncounter += damage
             
             if !player.isAlive {
                 resultLabel.text = "💀 You died from too many rolls!"
@@ -749,7 +999,7 @@ class GameScene: SKScene {
         isRolling = true
         hasRolled = true
         rollButtonLabel.text = "ROLLING..."
-        rollButton.fillColor = SKColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0)
+        rollButton.fillColor = UITheme.panelStroke
         
         let shouldClearSlots = slottedDice.isEmpty
         if shouldClearSlots {
@@ -777,7 +1027,7 @@ class GameScene: SKScene {
                     if completedDice == totalDiceToRoll {
                         self.isRolling = false
                         self.rollButtonLabel.text = "ROLL AGAIN"
-                        self.rollButton.fillColor = SKColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
+                        self.rollButton.fillColor = UITheme.accentBlue
                         self.updateUI()
                     }
                 }
@@ -787,7 +1037,7 @@ class GameScene: SKScene {
         if totalDiceToRoll == 0 {
             isRolling = false
             rollButtonLabel.text = "ROLL AGAIN"
-            rollButton.fillColor = SKColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
+            rollButton.fillColor = UITheme.accentBlue
             updateUI()
         }
     }
@@ -841,6 +1091,7 @@ class GameScene: SKScene {
         message += "Slotted: \(valuesText)\n\n"
         
         if !goalsMet.isEmpty {
+            maxGoalsInSingleCheck = max(maxGoalsInSingleCheck, goalsMet.count)
             goalsMet.forEach { monster.markGoalCompleted(at: $0) }
             message += "✅ Goals completed!\n"
             goalsMet.forEach { index in
@@ -896,7 +1147,6 @@ class GameScene: SKScene {
         
         // Heal Player
         player.currentHP = player.maxHP
-        player.restoreMana()
         
         rollButton.alpha = 0.5
         checkButton.alpha = 0.5
@@ -927,10 +1177,10 @@ class GameScene: SKScene {
     
     private func showMonsterDefeatedTransition(message: String, completion: @escaping () -> Void) {
         let fontSize = min(48, size.width / 20)
-        let deathLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let deathLabel = SKLabelNode(fontNamed: UIFonts.title)
         deathLabel.text = "💀 DEFEATED! 💀"
         deathLabel.fontSize = fontSize
-        deathLabel.fontColor = SKColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0)
+        deathLabel.fontColor = UITheme.accentRed
         deathLabel.position = CGPoint(x: size.width / 2, y: size.height / 2)
         deathLabel.alpha = 0
         deathLabel.setScale(0.5)
@@ -966,35 +1216,38 @@ class GameScene: SKScene {
         let panelWidth = min(450, size.width * 0.6)
         let panelHeight = min(200, size.height * 0.33)
         
-        let restPanel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 15)
-        restPanel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        restPanel.fillColor = SKColor(red: 0.2, green: 0.4, blue: 0.3, alpha: 0.95)
-        restPanel.strokeColor = SKColor(red: 0.5, green: 1.0, blue: 0.5, alpha: 1.0)
-        restPanel.lineWidth = 3
+        let restPanel = createPanel(size: CGSize(width: panelWidth, height: panelHeight),
+                                    position: CGPoint(x: size.width / 2, y: size.height / 2),
+                                    cornerRadius: 15)
+        restPanel.zPosition = 50
+        restPanel.fillColor = SKColor(red: 0.16, green: 0.28, blue: 0.22, alpha: 0.95)
+        restPanel.strokeColor = UITheme.accentGreen
+        restPanel.lineWidth = 2.5
         restPanel.alpha = 0
         restPanel.setScale(0.8)
         restPanel.name = "restPanel"
         addChild(restPanel)
         
-        let restLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let restLabel = SKLabelNode(fontNamed: UIFonts.header)
         restLabel.text = "⚔️ One Down! ⚔️"
         restLabel.fontSize = min(32, panelWidth / 14)
-        restLabel.fontColor = SKColor(red: 1.0, green: 1.0, blue: 0.6, alpha: 1.0)
+        restLabel.fontColor = UITheme.accentGold
         restLabel.position = CGPoint(x: 0, y: panelHeight * 0.25)
         restLabel.verticalAlignmentMode = .center
         restPanel.addChild(restLabel)
         
-        let nextLabel = SKLabelNode(fontNamed: "Arial")
+        let nextLabel = SKLabelNode(fontNamed: UIFonts.body)
         nextLabel.text = "Next: \(nextMonster.type.emoji) \(nextMonster.type.displayName)"
         nextLabel.fontSize = min(20, panelWidth / 22)
-        nextLabel.fontColor = SKColor(red: 1.0, green: 0.7, blue: 0.3, alpha: 1.0)
+        nextLabel.fontColor = UITheme.textPrimary
         nextLabel.position = CGPoint(x: 0, y: -panelHeight * 0.175)
         nextLabel.verticalAlignmentMode = .center
         restPanel.addChild(nextLabel)
         
-        let continueLabel = SKLabelNode(fontNamed: "Arial")
+        let continueLabel = SKLabelNode(fontNamed: UIFonts.body)
         continueLabel.text = "Click to continue..."
         continueLabel.fontSize = min(16, panelWidth / 28)
+        continueLabel.fontColor = UITheme.textSecondary
         continueLabel.position = CGPoint(x: 0, y: -panelHeight * 0.35)
         continueLabel.verticalAlignmentMode = .center
         restPanel.addChild(continueLabel)
@@ -1038,10 +1291,10 @@ class GameScene: SKScene {
     private func playMonsterDeathAnimation(completion: @escaping () -> Void) {
         let fontSize = min(64, size.width / 15)
         
-        let deathLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let deathLabel = SKLabelNode(fontNamed: UIFonts.title)
         deathLabel.text = "💀 DEFEATED! 💀"
         deathLabel.fontSize = fontSize
-        deathLabel.fontColor = SKColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0)
+        deathLabel.fontColor = UITheme.accentRed
         deathLabel.position = CGPoint(x: size.width / 2, y: size.height / 2)
         deathLabel.alpha = 0
         deathLabel.setScale(0.5)
@@ -1064,65 +1317,85 @@ class GameScene: SKScene {
     }
     
     private func showRestAndReward(encounter: Encounter, completion: @escaping () -> Void) {
-        let xpGained = encounter.totalXPValue
+        let baseXP = encounter.totalXPValue
+        let goalMultiplier = max(1, maxGoalsInSingleCheck)
+        let noDamageMultiplier = (damageTakenThisEncounter == 0) ? 2 : 1
+        let totalMultiplier = goalMultiplier * noDamageMultiplier
+        let xpGained = baseXP * totalMultiplier
         let oldLevel = player.level
         
         player.gainExperience(xpGained)
         let leveledUp = player.level > oldLevel
         player.currentHP = player.maxHP
-        player.restoreMana() // Refill Mana too
         
         let panelWidth = min(500, size.width * 0.7)
         let panelHeight = min(350, size.height * 0.5)
         
-        let panel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 20)
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        panel.fillColor = SKColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 0.95)
-        panel.strokeColor = SKColor(red: 0.8, green: 0.8, blue: 0.3, alpha: 1.0)
-        panel.lineWidth = 4
+        let panel = createPanel(size: CGSize(width: panelWidth, height: panelHeight),
+                                position: CGPoint(x: size.width / 2, y: size.height / 2),
+                                cornerRadius: 20)
+        panel.zPosition = 50
+        panel.fillColor = SKColor(red: 0.16, green: 0.22, blue: 0.32, alpha: 0.95)
+        panel.strokeColor = UITheme.accentGold
+        panel.lineWidth = 3
         panel.alpha = 0
         panel.setScale(0.5)
         panel.name = "rewardPanel"
         addChild(panel)
         
-        let titleLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let titleLabel = SKLabelNode(fontNamed: UIFonts.header)
         titleLabel.text = "🏆 VICTORY! 🏆"
         titleLabel.fontSize = min(40, panelWidth / 12)
-        titleLabel.fontColor = SKColor(red: 1.0, green: 0.9, blue: 0.3, alpha: 1.0)
+        titleLabel.fontColor = UITheme.accentGold
         titleLabel.position = CGPoint(x: 0, y: panelHeight * 0.34)
         titleLabel.verticalAlignmentMode = .center
         panel.addChild(titleLabel)
         
-        let restLabel = SKLabelNode(fontNamed: "Arial")
-        restLabel.text = "You rest and meditate..."
+        let restLabel = SKLabelNode(fontNamed: UIFonts.header)
+        restLabel.text = "💚 HP restored!"
         restLabel.fontSize = min(24, panelWidth / 20)
-        restLabel.fontColor = .white
+        restLabel.fontColor = UITheme.accentGreen
         restLabel.position = CGPoint(x: 0, y: panelHeight * 0.17)
         restLabel.verticalAlignmentMode = .center
         panel.addChild(restLabel)
         
-        let healLabel = SKLabelNode(fontNamed: "Arial Bold")
-        healLabel.text = "💚 HP & Mana restored!"
-        healLabel.fontSize = min(22, panelWidth / 22)
-        healLabel.fontColor = SKColor(red: 0.5, green: 1.0, blue: 0.5, alpha: 1.0)
-        healLabel.position = CGPoint(x: 0, y: panelHeight * 0.03)
-        healLabel.verticalAlignmentMode = .center
-        panel.addChild(healLabel)
-        
-        let xpLabel = SKLabelNode(fontNamed: "Arial Bold")
-        xpLabel.text = "⭐️ Gained \(xpGained) XP!"
+        let xpLabel = SKLabelNode(fontNamed: UIFonts.header)
+        if totalMultiplier > 1 {
+            xpLabel.text = "⭐️ Gained \(xpGained) XP (Base \(baseXP) x\(totalMultiplier))"
+        } else {
+            xpLabel.text = "⭐️ Gained \(xpGained) XP!"
+        }
         xpLabel.fontSize = min(22, panelWidth / 22)
-        xpLabel.fontColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 1.0)
+        xpLabel.fontColor = UITheme.accentBlue
         xpLabel.position = CGPoint(x: 0, y: -panelHeight * 0.09)
         xpLabel.verticalAlignmentMode = .center
         panel.addChild(xpLabel)
         
+        var bonusLines: [String] = []
+        if goalMultiplier > 1 {
+            bonusLines.append("Multi-goal x\(goalMultiplier)")
+        }
+        if noDamageMultiplier > 1 {
+            bonusLines.append("Flawless x2")
+        }
+        
+        if !bonusLines.isEmpty {
+            let bonusLabel = SKLabelNode(fontNamed: UIFonts.body)
+            bonusLabel.text = "Bonuses: " + bonusLines.joined(separator: " • ")
+            bonusLabel.fontSize = min(18, panelWidth / 24)
+            bonusLabel.fontColor = UITheme.textSecondary
+            bonusLabel.position = CGPoint(x: 0, y: -panelHeight * 0.20)
+            bonusLabel.verticalAlignmentMode = .center
+            panel.addChild(bonusLabel)
+        }
+        
         if leveledUp {
-            let levelUpLabel = SKLabelNode(fontNamed: "Arial Bold")
+            let levelUpLabel = SKLabelNode(fontNamed: UIFonts.header)
             levelUpLabel.text = "🎉 LEVEL UP! Now Level \(player.level)!"
             levelUpLabel.fontSize = min(26, panelWidth / 20)
-            levelUpLabel.fontColor = SKColor(red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0)
-            levelUpLabel.position = CGPoint(x: 0, y: -panelHeight * 0.20)
+            levelUpLabel.fontColor = UITheme.accentGold
+            let levelUpY = bonusLines.isEmpty ? -panelHeight * 0.20 : -panelHeight * 0.28
+            levelUpLabel.position = CGPoint(x: 0, y: levelUpY)
             levelUpLabel.verticalAlignmentMode = .center
             panel.addChild(levelUpLabel)
             
@@ -1133,9 +1406,10 @@ class GameScene: SKScene {
             levelUpLabel.run(SKAction.repeatForever(pulse))
         }
         
-        let continueLabel = SKLabelNode(fontNamed: "Arial")
+        let continueLabel = SKLabelNode(fontNamed: UIFonts.body)
         continueLabel.text = "Click to continue..."
         continueLabel.fontSize = min(18, panelWidth / 27)
+        continueLabel.fontColor = UITheme.textSecondary
         continueLabel.position = CGPoint(x: 0, y: -panelHeight * 0.37)
         continueLabel.verticalAlignmentMode = .center
         panel.addChild(continueLabel)
@@ -1156,9 +1430,8 @@ class GameScene: SKScene {
             return
         }
         
-        // Ensure full heal/restore
+        // Ensure full heal
         player.currentHP = player.maxHP
-        player.restoreMana()
         
         let disappear = SKAction.group([SKAction.fadeOut(withDuration: 0.3), SKAction.scale(to: 0.5, duration: 0.3)])
         let remove = SKAction.removeFromParent()
@@ -1188,39 +1461,40 @@ class GameScene: SKScene {
         
         let overlay = SKShapeNode(rectOf: size)
         overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        overlay.fillColor = .black
-        overlay.alpha = 0.7
+        overlay.fillColor = UITheme.backgroundBottom
+        overlay.alpha = 0.8
         overlay.zPosition = 100
         overlay.name = "runWarningOverlay"
         addChild(overlay)
         
         let panel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 20)
         panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        panel.fillColor = SKColor(red: 0.15, green: 0.15, blue: 0.2, alpha: 1.0)
-        panel.strokeColor = SKColor(red: 0.9, green: 0.6, blue: 0.2, alpha: 1.0)
-        panel.lineWidth = 4
+        panel.fillColor = UITheme.panelFill
+        panel.strokeColor = UITheme.accentGold
+        panel.lineWidth = 3
         panel.zPosition = 101
         panel.name = "runWarningPanel"
         panel.alpha = 0
         panel.setScale(0.5)
         addChild(panel)
+        attachShadow(to: panel, size: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 20, offset: CGPoint(x: 0, y: -8), color: UITheme.panelShadow, alpha: 0.6)
         
         let fadeIn = SKAction.fadeIn(withDuration: 0.3)
         let scaleUp = SKAction.scale(to: 1.0, duration: 0.3)
         panel.run(SKAction.group([fadeIn, scaleUp]))
         
-        let titleLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let titleLabel = SKLabelNode(fontNamed: UIFonts.header)
         titleLabel.text = "⚠️ WARNING ⚠️"
         titleLabel.fontSize = min(32, panelWidth / 15)
-        titleLabel.fontColor = SKColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        titleLabel.fontColor = UITheme.accentGold
         titleLabel.position = CGPoint(x: 0, y: panelHeight * 0.3)
         titleLabel.verticalAlignmentMode = .center
         panel.addChild(titleLabel)
         
-        let messageLabel = SKLabelNode(fontNamed: "Arial")
+        let messageLabel = SKLabelNode(fontNamed: UIFonts.body)
         messageLabel.text = "Running skips this encounter,\nbut you will NOT rest or heal!\n\nNext room HP: \(player.currentHP)"
         messageLabel.fontSize = min(20, panelWidth / 25)
-        messageLabel.fontColor = .white
+        messageLabel.fontColor = UITheme.textPrimary
         messageLabel.position = CGPoint(x: 0, y: 0)
         messageLabel.verticalAlignmentMode = .center
         messageLabel.numberOfLines = 0
@@ -1232,27 +1506,31 @@ class GameScene: SKScene {
         
         let confirmButton = SKShapeNode(rectOf: CGSize(width: buttonWidth, height: buttonHeight), cornerRadius: 10)
         confirmButton.position = CGPoint(x: -buttonSpacing, y: -panelHeight * 0.35)
-        confirmButton.fillColor = SKColor(red: 0.9, green: 0.3, blue: 0.3, alpha: 1.0)
-        confirmButton.strokeColor = .white
+        confirmButton.fillColor = UITheme.accentRed
+        confirmButton.strokeColor = UITheme.buttonStroke
         confirmButton.name = "confirmRunButton"
         panel.addChild(confirmButton)
+        attachShadow(to: confirmButton, size: CGSize(width: buttonWidth, height: buttonHeight), cornerRadius: 10, offset: CGPoint(x: 0, y: -3))
         
-        let confirmLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let confirmLabel = SKLabelNode(fontNamed: UIFonts.button)
         confirmLabel.text = "RUN"
         confirmLabel.fontSize = 22
+        confirmLabel.fontColor = UITheme.textPrimary
         confirmLabel.verticalAlignmentMode = .center
         confirmButton.addChild(confirmLabel)
         
         let cancelButton = SKShapeNode(rectOf: CGSize(width: buttonWidth, height: buttonHeight), cornerRadius: 10)
         cancelButton.position = CGPoint(x: buttonSpacing, y: -panelHeight * 0.35)
-        cancelButton.fillColor = SKColor(red: 0.3, green: 0.7, blue: 0.3, alpha: 1.0)
-        cancelButton.strokeColor = .white
+        cancelButton.fillColor = UITheme.accentGreen
+        cancelButton.strokeColor = UITheme.buttonStroke
         cancelButton.name = "cancelRunButton"
         panel.addChild(cancelButton)
+        attachShadow(to: cancelButton, size: CGSize(width: buttonWidth, height: buttonHeight), cornerRadius: 10, offset: CGPoint(x: 0, y: -3))
         
-        let cancelLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let cancelLabel = SKLabelNode(fontNamed: UIFonts.button)
         cancelLabel.text = "CANCEL"
         cancelLabel.fontSize = 22
+        cancelLabel.fontColor = UITheme.textPrimary
         cancelLabel.verticalAlignmentMode = .center
         cancelButton.addChild(cancelLabel)
     }
@@ -1278,6 +1556,8 @@ class GameScene: SKScene {
         hasRolled = false
         rollCount = 0
         currentSkillMode = .none
+        maxGoalsInSingleCheck = 1
+        damageTakenThisEncounter = 0
         clearAllSlots()
         
         roomNumber += 1
@@ -1294,7 +1574,7 @@ class GameScene: SKScene {
         rollButtonLabel.text = "ROLL DICE"
         
         resultLabel.text = "⚠️ You ran away! No rest or healing."
-        resultLabel.fontColor = SKColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        resultLabel.fontColor = UITheme.accentGold
         updateUI()
         
         let flash = SKAction.sequence([SKAction.fadeAlpha(to: 0.3, duration: 0.3), SKAction.fadeAlpha(to: 1.0, duration: 0.3)])
@@ -1305,10 +1585,11 @@ class GameScene: SKScene {
         rollCount = 0
         hasRolled = false
         currentSkillMode = .none
+        maxGoalsInSingleCheck = 1
+        damageTakenThisEncounter = 0
         roomNumber += 1
         
         player.currentHP = player.maxHP
-        player.restoreMana()
         
         if roomNumber % 5 == 0 {
             currentEncounter = EncounterGenerator.generateBossEncounter(roomNumber: roomNumber)
@@ -1324,7 +1605,7 @@ class GameScene: SKScene {
         rollButtonLabel.text = "ROLL DICE"
         
         resultLabel.text = "Ready for the next challenge!"
-        resultLabel.fontColor = .white
+        resultLabel.fontColor = UITheme.textPrimary
         updateUI()
     }
     
@@ -1339,6 +1620,8 @@ class GameScene: SKScene {
         isRolling = false
         currentSkillMode = .none
         gameEnded = false
+        maxGoalsInSingleCheck = 1
+        damageTakenThisEncounter = 0
         
         currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
         clearAllSlots()
@@ -1351,7 +1634,7 @@ class GameScene: SKScene {
         rollButtonLabel.text = "ROLL DICE"
         
         resultLabel.text = "New game started! Click 'ROLL DICE' to begin!"
-        resultLabel.fontColor = .white
+        resultLabel.fontColor = UITheme.textPrimary
         updateUI()
     }
     
@@ -1391,57 +1674,58 @@ class GameScene: SKScene {
         
         let overlay = SKShapeNode(rectOf: size)
         overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        overlay.fillColor = .black
-        overlay.alpha = 0.7
+        overlay.fillColor = UITheme.backgroundBottom
+        overlay.alpha = 0.8
         overlay.zPosition = 200
         overlay.name = "initialsOverlay"
         addChild(overlay)
         
         let panel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 20)
         panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        panel.fillColor = SKColor(red: 0.2, green: 0.2, blue: 0.3, alpha: 1.0)
-        panel.strokeColor = SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
-        panel.lineWidth = 4
+        panel.fillColor = UITheme.panelFill
+        panel.strokeColor = UITheme.accentGold
+        panel.lineWidth = 3
         panel.zPosition = 201
         panel.name = "initialsPanel"
         panel.setScale(0.5)
         panel.alpha = 0
         addChild(panel)
+        attachShadow(to: panel, size: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 20, offset: CGPoint(x: 0, y: -8), color: UITheme.panelShadow, alpha: 0.6)
         
-        let titleLabel = SKLabelNode(fontNamed: "Arial Bold")
+        let titleLabel = SKLabelNode(fontNamed: UIFonts.header)
         titleLabel.text = "🏆 HIGH SCORE! 🏆"
         titleLabel.fontSize = 28
-        titleLabel.fontColor = SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
+        titleLabel.fontColor = UITheme.accentGold
         titleLabel.position = CGPoint(x: 0, y: panelHeight / 2 - 50)
         titleLabel.verticalAlignmentMode = .center
         panel.addChild(titleLabel)
         
-        let scoreLabel = SKLabelNode(fontNamed: "Arial")
+        let scoreLabel = SKLabelNode(fontNamed: UIFonts.body)
         scoreLabel.text = "Score: \(xp) XP • Room \(roomNumber)"
         scoreLabel.fontSize = 20
-        scoreLabel.fontColor = .white
+        scoreLabel.fontColor = UITheme.textPrimary
         scoreLabel.position = CGPoint(x: 0, y: panelHeight / 2 - 90)
         panel.addChild(scoreLabel)
         
-        let instructionLabel = SKLabelNode(fontNamed: "Arial")
+        let instructionLabel = SKLabelNode(fontNamed: UIFonts.body)
         instructionLabel.text = "Enter your initials (3 letters):"
         instructionLabel.fontSize = 18
-        instructionLabel.fontColor = .white
+        instructionLabel.fontColor = UITheme.textSecondary
         instructionLabel.position = CGPoint(x: 0, y: 20)
         panel.addChild(instructionLabel)
         
-        let initialsLabel = SKLabelNode(fontNamed: "Courier Bold")
+        let initialsLabel = SKLabelNode(fontNamed: UIFonts.mono)
         initialsLabel.text = "___"
         initialsLabel.fontSize = 36
-        initialsLabel.fontColor = SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
+        initialsLabel.fontColor = UITheme.accentGold
         initialsLabel.position = CGPoint(x: 0, y: -25)
         initialsLabel.name = "initialsDisplay"
         panel.addChild(initialsLabel)
         
-        let submitLabel = SKLabelNode(fontNamed: "Arial")
+        let submitLabel = SKLabelNode(fontNamed: UIFonts.body)
         submitLabel.text = "Press RETURN to submit"
         submitLabel.fontSize = 16
-        submitLabel.fontColor = .gray
+        submitLabel.fontColor = UITheme.textSecondary
         submitLabel.position = CGPoint(x: 0, y: -panelHeight / 2 + 40)
         panel.addChild(submitLabel)
         
