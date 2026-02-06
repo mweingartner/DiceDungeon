@@ -36,6 +36,14 @@ enum ColorMatchMode {
     case minimum    // Must be >= the specified value
 }
 
+enum GoalTier: Int, CaseIterable {
+    case basic = 1
+    case common = 2
+    case uncommon = 3
+    case rare = 4
+    case extreme = 5
+}
+
 struct DiceGoal {
     let type: DiceGoalType
     let description: String
@@ -277,4 +285,165 @@ struct DiceGoal {
 struct DiceResult {
     let color: DiceColor
     let value: Int
+}
+
+struct DiceGoalFactory {
+    struct GoalOption {
+        let tier: GoalTier
+        let weight: Int
+        let build: () -> DiceGoal
+    }
+    
+    static func generateGoals(count: Int, playerLevel: Int) -> [DiceGoal] {
+        let goalCount = max(1, count)
+        let tierWeights = weights(for: playerLevel)
+        let options = goalOptions()
+        
+        var goals: [DiceGoal] = []
+        var usedDescriptions: Set<String> = []
+        
+        for _ in 0..<goalCount {
+            var attempts = 0
+            while attempts < 12 {
+                attempts += 1
+                let tier = weightedPick(tierWeights)
+                let candidates = options.filter { $0.tier == tier }
+                if let option = weightedPickOption(candidates) {
+                    let goal = option.build()
+                    if !usedDescriptions.contains(goal.description) {
+                        usedDescriptions.insert(goal.description)
+                        goals.append(goal)
+                        break
+                    }
+                }
+            }
+        }
+        
+        if goals.count < goalCount {
+            let fallback = DiceGoal(type: .pair, description: "Roll any pair", difficulty: 1)
+            while goals.count < goalCount {
+                goals.append(fallback)
+            }
+        }
+        
+        return goals
+    }
+    
+    private static func weights(for level: Int) -> [(GoalTier, Int)] {
+        switch level {
+        case ...1:
+            return [(.basic, 60), (.common, 25), (.uncommon, 12), (.rare, 3), (.extreme, 0)]
+        case 2:
+            return [(.basic, 45), (.common, 30), (.uncommon, 18), (.rare, 7), (.extreme, 0)]
+        case 3:
+            return [(.basic, 30), (.common, 30), (.uncommon, 25), (.rare, 12), (.extreme, 3)]
+        case 4:
+            return [(.basic, 20), (.common, 28), (.uncommon, 28), (.rare, 16), (.extreme, 8)]
+        case 5:
+            return [(.basic, 12), (.common, 24), (.uncommon, 30), (.rare, 20), (.extreme, 14)]
+        case 6:
+            return [(.basic, 8), (.common, 20), (.uncommon, 30), (.rare, 24), (.extreme, 18)]
+        default:
+            return [(.basic, 5), (.common, 18), (.uncommon, 28), (.rare, 27), (.extreme, 22)]
+        }
+    }
+    
+    private static func goalOptions() -> [GoalOption] {
+        return [
+            GoalOption(tier: .basic, weight: 3, build: { DiceGoal(type: .pair, description: "Roll any pair", difficulty: 1) }),
+            GoalOption(tier: .basic, weight: 3, build: {
+                let value = Int.random(in: 1...6)
+                return DiceGoal(type: .specificNumber(value), description: "Roll a \(value)", difficulty: 1)
+            }),
+            GoalOption(tier: .basic, weight: 3, build: {
+                let color = randomColor()
+                let minValue = Int.random(in: 3...4)
+                return DiceGoal(type: .colorMatch(color), description: "\(color.displayName) die shows \(minValue)+", difficulty: 2,
+                                colorRequirements: [color: minValue], colorMatchMode: .minimum)
+            }),
+            GoalOption(tier: .basic, weight: 2, build: {
+                let colors = randomDistinctColors(count: 2)
+                return DiceGoal(type: .colorOdds(colors), description: "\(colors[0].displayName) & \(colors[1].displayName) both odd", difficulty: 2)
+            }),
+            GoalOption(tier: .basic, weight: 2, build: {
+                let colors = randomDistinctColors(count: 2)
+                return DiceGoal(type: .colorEvens(colors), description: "\(colors[0].displayName) & \(colors[1].displayName) both even", difficulty: 2)
+            }),
+            GoalOption(tier: .common, weight: 3, build: { DiceGoal(type: .twoPair, description: "Roll two pairs", difficulty: 3) }),
+            GoalOption(tier: .common, weight: 3, build: { DiceGoal(type: .threeOfAKind, description: "Roll three of a kind", difficulty: 3) }),
+            GoalOption(tier: .common, weight: 2, build: {
+                let colors = randomDistinctColors(count: 2)
+                return DiceGoal(type: .colorPair(colors[0], colors[1]), description: "\(colors[0].displayName) & \(colors[1].displayName) match", difficulty: 3)
+            }),
+            GoalOption(tier: .common, weight: 2, build: {
+                let colors = randomDistinctColors(count: 2)
+                let threshold = Int.random(in: 8...10)
+                return DiceGoal(type: .colorSum(colors), description: "\(colors[0].displayName) + \(colors[1].displayName) = \(threshold)+", difficulty: 3, sumThreshold: threshold)
+            }),
+            GoalOption(tier: .uncommon, weight: 3, build: { DiceGoal(type: .smallStraight, description: "Roll a small straight (4 consecutive)", difficulty: 4) }),
+            GoalOption(tier: .uncommon, weight: 2, build: { DiceGoal(type: .fullHouse, description: "Roll a full house", difficulty: 4) }),
+            GoalOption(tier: .uncommon, weight: 2, build: {
+                let colors = randomDistinctColors(count: 3)
+                return DiceGoal(type: .colorTriple(colors[0], colors[1], colors[2]), description: "\(colors[0].displayName), \(colors[1].displayName) & \(colors[2].displayName) all match", difficulty: 5)
+            }),
+            GoalOption(tier: .uncommon, weight: 2, build: { DiceGoal(type: .allWarmColors, description: "Red, Orange & Yellow all 4+", difficulty: 4) }),
+            GoalOption(tier: .uncommon, weight: 2, build: { DiceGoal(type: .allCoolColors, description: "Green, Blue & Purple all 4+", difficulty: 4) }),
+            GoalOption(tier: .uncommon, weight: 1, build: {
+                let colors = randomDistinctColors(count: 3)
+                return DiceGoal(type: .colorSequence(colors), description: "\(colors[0].displayName)→\(colors[1].displayName)→\(colors[2].displayName) ascending", difficulty: 5)
+            }),
+            GoalOption(tier: .rare, weight: 3, build: { DiceGoal(type: .fourOfAKind, description: "Roll four of a kind", difficulty: 6) }),
+            GoalOption(tier: .rare, weight: 2, build: { DiceGoal(type: .largeStraight, description: "Roll a large straight (5 consecutive)", difficulty: 7) }),
+            GoalOption(tier: .rare, weight: 2, build: {
+                let colors = randomDistinctColors(count: 3)
+                let threshold = Int.random(in: 12...15)
+                return DiceGoal(type: .colorSum(colors), description: "\(colors[0].displayName) + \(colors[1].displayName) + \(colors[2].displayName) = \(threshold)+", difficulty: 6, sumThreshold: threshold)
+            }),
+            GoalOption(tier: .rare, weight: 1, build: { DiceGoal(type: .rainbowPattern, description: "Rainbow pattern (adjacent colors differ by 1)", difficulty: 7) }),
+            GoalOption(tier: .extreme, weight: 2, build: { DiceGoal(type: .fiveOfAKind, description: "Roll five of a kind", difficulty: 8) }),
+            GoalOption(tier: .extreme, weight: 1, build: { DiceGoal(type: .sixOfAKind, description: "Roll six of a kind", difficulty: 9) }),
+            GoalOption(tier: .extreme, weight: 1, build: { DiceGoal(type: .fullStraight, description: "Roll 1-6 straight", difficulty: 9) }),
+            GoalOption(tier: .extreme, weight: 1, build: {
+                let colors = randomDistinctColors(count: 5)
+                return DiceGoal(type: .colorSequence(colors), description: "\(colors[0].displayName)→\(colors[1].displayName)→\(colors[2].displayName)→\(colors[3].displayName)→\(colors[4].displayName) ascending", difficulty: 8)
+            })
+        ]
+    }
+    
+    private static func weightedPick(_ weights: [(GoalTier, Int)]) -> GoalTier {
+        let total = weights.reduce(0) { $0 + $1.1 }
+        let roll = Int.random(in: 1...max(1, total))
+        var running = 0
+        for (tier, weight) in weights {
+            running += weight
+            if roll <= running {
+                return tier
+            }
+        }
+        return .basic
+    }
+    
+    private static func weightedPickOption(_ options: [GoalOption]) -> GoalOption? {
+        guard !options.isEmpty else { return nil }
+        let total = options.reduce(0) { $0 + $1.weight }
+        let roll = Int.random(in: 1...max(1, total))
+        var running = 0
+        for option in options {
+            running += option.weight
+            if roll <= running {
+                return option
+            }
+        }
+        return options.first
+    }
+    
+    private static func randomColor() -> DiceColor {
+        return DiceColor.allCases.randomElement() ?? .red
+    }
+    
+    private static func randomDistinctColors(count: Int) -> [DiceColor] {
+        let colors = DiceColor.allCases.shuffled()
+        let clamped = min(max(1, count), colors.count)
+        return Array(colors.prefix(clamped))
+    }
 }

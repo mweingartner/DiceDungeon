@@ -300,7 +300,7 @@ class GameScene: SKScene {
         
         // Initialize game
         player = Player()
-        currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
+        currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
         rollCount = 0
         hasRolled = false
         gameEnded = false
@@ -325,7 +325,7 @@ class GameScene: SKScene {
         // Reinitialize if needed
         if player == nil {
             player = Player()
-            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
+            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
             rollCount = 0
             hasRolled = false
             maxGoalsInSingleCheck = 1
@@ -1562,9 +1562,9 @@ class GameScene: SKScene {
         
         roomNumber += 1
         if roomNumber % 5 == 0 {
-            currentEncounter = EncounterGenerator.generateBossEncounter(roomNumber: roomNumber)
+            currentEncounter = EncounterGenerator.generateBossEncounter(roomNumber: roomNumber, playerLevel: player.level)
         } else {
-            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
+            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
         }
         resetDiceToOne()
         
@@ -1592,9 +1592,9 @@ class GameScene: SKScene {
         player.currentHP = player.maxHP
         
         if roomNumber % 5 == 0 {
-            currentEncounter = EncounterGenerator.generateBossEncounter(roomNumber: roomNumber)
+            currentEncounter = EncounterGenerator.generateBossEncounter(roomNumber: roomNumber, playerLevel: player.level)
         } else {
-            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
+            currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
         }
         
         resetDiceToOne()
@@ -1623,7 +1623,7 @@ class GameScene: SKScene {
         maxGoalsInSingleCheck = 1
         damageTakenThisEncounter = 0
         
-        currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber)
+        currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
         clearAllSlots()
         resetDiceToOne()
         

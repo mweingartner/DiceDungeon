@@ -55,67 +55,45 @@ class Encounter {
 class EncounterGenerator {
     
     // Generate an encounter based on room number (progressive difficulty)
-    static func generateEncounter(roomNumber: Int) -> Encounter {
-        let difficulty = calculateDifficulty(for: roomNumber)
-        let monsterTypes = selectMonsterTypes(for: difficulty)
-        let monsterCount = selectMonsterCount(for: difficulty, roomNumber: roomNumber)
+    static func generateEncounter(roomNumber: Int, playerLevel: Int) -> Encounter {
+        let monsterTypes = selectMonsterTypes(for: playerLevel)
+        let monsterCount = selectMonsterCount()
+        let goalsPerEncounter = Int.random(in: playerLevel...max(playerLevel + 2, playerLevel))
         
         var monsters: [Monster] = []
-        let difficultyMultiplier = 1.0 + (Double(roomNumber - 1) * 0.15) // 15% HP increase per room
-        
         for _ in 0..<monsterCount {
-            let type = monsterTypes.randomElement()!
-            let monster = Monster.create(type: type, difficultyMultiplier: difficultyMultiplier)
+            let type = monsterTypes.randomElement() ?? .slime
+            let goals = DiceGoalFactory.generateGoals(count: goalsPerEncounter, playerLevel: playerLevel)
+            let monster = Monster(type: type, goals: goals)
             monsters.append(monster)
         }
         
         return Encounter(monsters: monsters, roomNumber: roomNumber)
     }
     
-    private static func calculateDifficulty(for roomNumber: Int) -> Int {
-        // Difficulty increases with room number
-        // Rooms 1-3: Easy (1-2)
-        // Rooms 4-7: Medium (3-5)
-        // Rooms 8-12: Hard (6-8)
-        // Rooms 13+: Boss (9-10)
-        
-        switch roomNumber {
-        case 1...3:
-            return Int.random(in: 1...2)
-        case 4...7:
-            return Int.random(in: 3...5)
-        case 8...12:
-            return Int.random(in: 6...8)
-        default:
-            return Int.random(in: 9...10)
-        }
-    }
-    
-    private static func selectMonsterTypes(for difficulty: Int) -> [MonsterType] {
-        switch difficulty {
-        case 1...2:
+    private static func selectMonsterTypes(for playerLevel: Int) -> [MonsterType] {
+        switch playerLevel {
+        case ...2:
             return [.slime, .rat, .spider, .bat]
-        case 3...5:
+        case 3...4:
             return [.goblin, .skeleton, .zombie, .orc, .ghost]
-        case 6...8:
+        case 5...6:
             return [.troll, .vampire, .werewolf, .demon]
-        case 9...10:
-            return [.dragon, .lich, .hydra]
         default:
-            return [.slime]
+            return [.troll, .vampire, .werewolf, .demon]
         }
     }
     
-    private static func selectMonsterCount(for difficulty: Int, roomNumber: Int) -> Int {
-        // One monster per room for simpler, more focused encounters
+    private static func selectMonsterCount() -> Int {
         return 1
     }
     
     // Generate a boss encounter
-    static func generateBossEncounter(roomNumber: Int) -> Encounter {
-        let bossType = [MonsterType.dragon, .lich, .hydra].randomElement()!
-        let difficultyMultiplier = 1.0 + (Double(roomNumber) * 0.2)
-        let boss = Monster.create(type: bossType, difficultyMultiplier: difficultyMultiplier)
+    static func generateBossEncounter(roomNumber: Int, playerLevel: Int) -> Encounter {
+        let bossType = [MonsterType.dragon, .lich, .hydra].randomElement() ?? .dragon
+        let goalsPerEncounter = Int.random(in: playerLevel...max(playerLevel + 2, playerLevel))
+        let goals = DiceGoalFactory.generateGoals(count: goalsPerEncounter, playerLevel: playerLevel)
+        let boss = Monster(type: bossType, goals: goals)
         
         return Encounter(monsters: [boss], roomNumber: roomNumber)
     }
