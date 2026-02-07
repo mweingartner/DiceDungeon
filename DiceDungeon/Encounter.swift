@@ -58,7 +58,9 @@ class EncounterGenerator {
     static func generateEncounter(roomNumber: Int, playerLevel: Int) -> Encounter {
         let monsterTypes = selectMonsterTypes(for: playerLevel)
         let monsterCount = selectMonsterCount()
-        let goalsPerEncounter = Int.random(in: playerLevel...max(playerLevel + 2, playerLevel))
+        let minGoals = min(playerLevel, 10)
+        let goalsUpperBound = min(10, max(playerLevel + 2, playerLevel))
+        let goalsPerEncounter = Int.random(in: minGoals...goalsUpperBound)
         
         var monsters: [Monster] = []
         for _ in 0..<monsterCount {
@@ -91,7 +93,9 @@ class EncounterGenerator {
     // Generate a boss encounter
     static func generateBossEncounter(roomNumber: Int, playerLevel: Int) -> Encounter {
         let bossType = [MonsterType.dragon, .lich, .hydra].randomElement() ?? .dragon
-        let goalsPerEncounter = Int.random(in: playerLevel...max(playerLevel + 2, playerLevel))
+        let minGoals = min(playerLevel, 10)
+        let goalsUpperBound = min(10, max(playerLevel + 2, playerLevel))
+        let goalsPerEncounter = Int.random(in: minGoals...goalsUpperBound)
         let goals = DiceGoalFactory.generateGoals(count: goalsPerEncounter, playerLevel: playerLevel)
         let boss = Monster(type: bossType, goals: goals)
         

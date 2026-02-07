@@ -235,6 +235,10 @@ class GameScene: SKScene {
     private var resultPanel: SKShapeNode?
     private var maxGoalsInSingleCheck: Int = 1
     private var damageTakenThisEncounter: Int = 0
+    private var encounterTimeRemaining: Int = 0
+    private var encounterTimerActive: Bool = false
+    private var timerLabel: SKLabelNode!
+    private var timerTintNode: SKShapeNode?
     
     // Colors for dice (rainbow order)
     private let diceColors: [DiceColor] = [.red, .orange, .yellow, .green, .blue, .purple]
@@ -250,6 +254,7 @@ class GameScene: SKScene {
         static let titleYOffset: CGFloat = 60
         static let roomYOffset: CGFloat = 120  // Room number label
         static let rollCountYOffset: CGFloat = 155  // Roll count info
+        static let timerYOffset: CGFloat = 190      // Encounter timer
         static let playerStatsYOffset: CGFloat = 60
         static let playerManaYOffset: CGFloat = 90
         static let playerXPYOffset: CGFloat = 120
@@ -306,12 +311,14 @@ class GameScene: SKScene {
         gameEnded = false
         maxGoalsInSingleCheck = 1
         damageTakenThisEncounter = 0
+        stopEncounterTimer()
         
         setupBackground()
         setupUI()
         setupDice()
         setupSlots()
         updateUI()
+        startEncounterTimerIfNeeded()
     }
     
     override func didChangeSize(_ oldSize: CGSize) {
@@ -330,6 +337,7 @@ class GameScene: SKScene {
             hasRolled = false
             maxGoalsInSingleCheck = 1
             damageTakenThisEncounter = 0
+            stopEncounterTimer()
         }
         
         setupBackground()
@@ -337,6 +345,9 @@ class GameScene: SKScene {
         setupDice()
         setupSlots()
         updateUI()
+        if encounterTimerActive {
+            restartEncounterTimerTicker()
+        }
     }
     
     private func setupBackground() {
@@ -507,6 +518,22 @@ class GameScene: SKScene {
         rollCountLabel.fontColor = UITheme.textSecondary
         rollCountLabel.position = CGPoint(x: size.width / 2, y: size.height - Layout.rollCountYOffset)
         addChild(rollCountLabel)
+        
+        timerLabel = SKLabelNode(fontNamed: UIFonts.header)
+        timerLabel.fontSize = normalFontSize
+        timerLabel.fontColor = UITheme.textSecondary
+        timerLabel.position = CGPoint(x: size.width / 2, y: size.height - Layout.timerYOffset)
+        addChild(timerLabel)
+        
+        timerTintNode = SKShapeNode(rectOf: size)
+        timerTintNode?.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        timerTintNode?.fillColor = UITheme.accentRed
+        timerTintNode?.strokeColor = .clear
+        timerTintNode?.alpha = 0.0
+        timerTintNode?.zPosition = 5
+        if let timerTintNode {
+            addChild(timerTintNode)
+        }
         
         let leftPanelTop = layoutState.leftPanelCenter.y + layoutState.leftPanelSize.height / 2
         let leftPanelInsetX = layoutState.leftPanelCenter.x - layoutState.leftPanelSize.width / 2 + 18
@@ -847,6 +874,8 @@ class GameScene: SKScene {
             rollCountLabel.fontColor = UITheme.accentRed
         }
         
+        updateTimerLabel()
+        
         if let encounter = currentEncounter, let monster = encounter.currentMonster {
             monsterInfoLabel.text = "\(monster.type.emoji) \(monster.type.displayName)"
             let completed = monster.goalsCompleted.count
@@ -891,6 +920,7 @@ class GameScene: SKScene {
         if !player.isAlive {
             if !gameEnded { // Only trigger once
                 gameEnded = true
+                stopEncounterTimer()
                 resultLabel.text = "💀 You have been defeated! 💀\nFinal Score: Room \(roomNumber), \(player.experience) XP"
                 
                 // Disable buttons immediately
@@ -1147,6 +1177,7 @@ class GameScene: SKScene {
         
         // Heal Player
         player.currentHP = player.maxHP
+        stopEncounterTimer()
         
         rollButton.alpha = 0.5
         checkButton.alpha = 0.5
@@ -1558,6 +1589,7 @@ class GameScene: SKScene {
         currentSkillMode = .none
         maxGoalsInSingleCheck = 1
         damageTakenThisEncounter = 0
+        stopEncounterTimer()
         clearAllSlots()
         
         roomNumber += 1
@@ -1576,6 +1608,7 @@ class GameScene: SKScene {
         resultLabel.text = "⚠️ You ran away! No rest or healing."
         resultLabel.fontColor = UITheme.accentGold
         updateUI()
+        startEncounterTimerIfNeeded()
         
         let flash = SKAction.sequence([SKAction.fadeAlpha(to: 0.3, duration: 0.3), SKAction.fadeAlpha(to: 1.0, duration: 0.3)])
         resultLabel.run(SKAction.repeat(flash, count: 2))
@@ -1587,6 +1620,7 @@ class GameScene: SKScene {
         currentSkillMode = .none
         maxGoalsInSingleCheck = 1
         damageTakenThisEncounter = 0
+        stopEncounterTimer()
         roomNumber += 1
         
         player.currentHP = player.maxHP
@@ -1607,6 +1641,7 @@ class GameScene: SKScene {
         resultLabel.text = "Ready for the next challenge!"
         resultLabel.fontColor = UITheme.textPrimary
         updateUI()
+        startEncounterTimerIfNeeded()
     }
     
     private func startNewGame() {
@@ -1622,6 +1657,7 @@ class GameScene: SKScene {
         gameEnded = false
         maxGoalsInSingleCheck = 1
         damageTakenThisEncounter = 0
+        stopEncounterTimer()
         
         currentEncounter = EncounterGenerator.generateEncounter(roomNumber: roomNumber, playerLevel: player.level)
         clearAllSlots()
@@ -1636,6 +1672,118 @@ class GameScene: SKScene {
         resultLabel.text = "New game started! Click 'ROLL DICE' to begin!"
         resultLabel.fontColor = UITheme.textPrimary
         updateUI()
+        startEncounterTimerIfNeeded()
+    }
+    
+    private func startEncounterTimerIfNeeded() {
+        guard player.level >= 11 else {
+            encounterTimerActive = false
+            encounterTimeRemaining = 0
+            updateTimerLabel()
+            stopEncounterTimer()
+            return
+        }
+        
+        let reduction = max(0, player.level - 11) * 5
+        encounterTimeRemaining = max(90, 180 - reduction)
+        encounterTimerActive = true
+        updateTimerLabel()
+        restartEncounterTimerTicker()
+    }
+    
+    private func restartEncounterTimerTicker() {
+        guard encounterTimerActive else { return }
+        removeAction(forKey: "encounterTimerTick")
+        let tick = SKAction.run { [weak self] in
+            self?.tickEncounterTimer()
+        }
+        let sequence = SKAction.sequence([SKAction.wait(forDuration: 1.0), tick])
+        run(SKAction.repeatForever(sequence), withKey: "encounterTimerTick")
+    }
+    
+    private func stopEncounterTimer() {
+        encounterTimerActive = false
+        removeAction(forKey: "encounterTimerTick")
+        timerLabel?.removeAction(forKey: "timerPulse")
+        timerLabel?.setScale(1.0)
+        timerLabel?.text = ""
+        timerTintNode?.removeAction(forKey: "timerTintPulse")
+        timerTintNode?.alpha = 0.0
+    }
+    
+    private func tickEncounterTimer() {
+        guard encounterTimerActive else { return }
+        guard currentEncounter?.isComplete == false else { return }
+        guard player.isAlive else { return }
+        
+        encounterTimeRemaining = max(0, encounterTimeRemaining - 1)
+        updateTimerLabel()
+        
+        if encounterTimeRemaining == 0 {
+            handleTimerExpired()
+        }
+    }
+    
+    private func updateTimerLabel() {
+        guard let timerLabel = timerLabel else { return }
+        guard encounterTimerActive, player.level >= 11 else {
+            timerLabel.text = ""
+            timerTintNode?.removeAction(forKey: "timerTintPulse")
+            timerTintNode?.alpha = 0.0
+            return
+        }
+        
+        let minutes = encounterTimeRemaining / 60
+        let seconds = encounterTimeRemaining % 60
+        timerLabel.text = String(format: "⏳ %d:%02d", minutes, seconds)
+        timerLabel.fontColor = encounterTimeRemaining <= 30 ? UITheme.accentRed : UITheme.textSecondary
+        
+        if encounterTimeRemaining <= 30 {
+            if timerLabel.action(forKey: "timerPulse") == nil {
+                let pulse = SKAction.sequence([
+                    SKAction.scale(to: 1.12, duration: 0.2),
+                    SKAction.scale(to: 1.0, duration: 0.2),
+                    SKAction.wait(forDuration: 0.6)
+                ])
+                timerLabel.run(SKAction.repeatForever(pulse), withKey: "timerPulse")
+            }
+            if timerTintNode?.action(forKey: "timerTintPulse") == nil {
+                let tintPulse = SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.18, duration: 0.25),
+                    SKAction.fadeAlpha(to: 0.05, duration: 0.25),
+                    SKAction.wait(forDuration: 0.5)
+                ])
+                timerTintNode?.run(SKAction.repeatForever(tintPulse), withKey: "timerTintPulse")
+            }
+        } else {
+            timerLabel.removeAction(forKey: "timerPulse")
+            timerLabel.setScale(1.0)
+            timerTintNode?.removeAction(forKey: "timerTintPulse")
+            timerTintNode?.alpha = 0.0
+        }
+    }
+    
+    private func handleTimerExpired() {
+        guard !gameEnded else { return }
+        gameEnded = true
+        encounterTimerActive = false
+        
+        rollButton.alpha = 0.5
+        checkButton.alpha = 0.5
+        runButton.alpha = 0.5
+        skillNudgeButton.alpha = 0.3
+        skillFlipButton.alpha = 0.3
+        skillFocusButton.alpha = 0.3
+        
+        resultLabel.text = "⏳ Time's up! You were overwhelmed."
+        resultLabel.fontColor = UITheme.accentRed
+        player.currentHP = 0
+        
+        let wait = SKAction.wait(forDuration: 1.0)
+        let showDialog = SKAction.run { [weak self] in
+            self?.handleGameEnd()
+        }
+        run(SKAction.sequence([wait, showDialog]))
     }
     
     private func updateLeaderboard() {
